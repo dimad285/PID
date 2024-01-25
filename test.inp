@@ -1,0 +1,811 @@
+basic
+{
+The most basic OOPIC Pro input file possible.
+}
+Variables
+{
+	//physics
+	d = 0.01
+	U = 300
+	p = 0.5 
+	T = 0.025
+	perm = 4.2 //permttivity //dobavit' v avto
+	Qflag = 1	//dobavit' v avto
+
+	//coordinates
+	tube_r = 0.028
+	tube_h = 0.005
+
+	//grid
+	cell_size = 0.001 // cell dimensions for both axis in meteres
+	Kmax = 64
+  	Jmax = 128
+	tube_k = 28
+	dk = 5		 
+	
+	//time
+	time_mult = 1
+	baseTime = 1.0e-12
+  	
+	//species
+	A = 28
+	Gie = 0.03
+	eCycle = 1000
+	Cycle_ratio = 100
+	iCycle = eCycle/Cycle_ratio
+	
+	//load
+	n = 100000  //np2c
+	density_coef = 1000 //10000
+	init_density = 1E7*n*density_coef
+	load_l1 = Jmax/2*cell_size-d/2+cell_size/2
+	load_l2 = Jmax/2*cell_size-d/2+cell_size
+	load_r1 = cell_size
+	load_r2 = cell_size*(tube_k-1)
+}
+
+Region
+{
+Grid
+{
+	Geometry = 0
+	J = Jmax		
+	K = Kmax		
+	x1s = 0	
+	x1f = Jmax/1000
+	x2s = 0		
+	x2f = Kmax/1000
+}
+
+Control // Control block 
+{ 
+	dt = baseTime*time_mult*eCycle/sqrt(p)
+	ElectrostaticFlag = 1
+	NonRelativisticFlag = 1
+	initPoissonSolve = 1
+	presidue = 1e-3
+	nSmoothing = 0
+	PetscKSPType = 7
+	particleLimit = 1e4
+}
+
+
+Species
+{
+	name = ions_init
+	m = A * 1.66e-27
+	q = 1.6e-19
+	collisionModel = 2	
+	supercycle = iCycle
+}
+
+Species // Species block 
+{
+	name = electrons
+	m = 9.11E-31
+	q = -1.60E-19
+	collisionModel = 1
+	supercycle = eCycle
+} 
+
+
+
+
+Species
+{
+	name = ions
+	m = A * 1.66e-27
+	q = 1.6e-19
+	collisionModel = 2	
+	supercycle = iCycle
+}
+CylindricalAxis
+{
+	j1 = 0
+	k1 = 0 
+	j2 = Jmax
+	k2 = 0
+	normal = 1
+}
+
+Equipotential
+{
+C = 0
+Secondary
+{
+threshold = 0
+secondary = Gie
+secSpecies = electrons
+iSpecies = ions
+}
+Secondary
+{
+threshold = 0
+secondary = Gie
+secSpecies = electrons
+iSpecies = ions_init
+}
+
+Segment
+{
+j1 = Jmax/2-d*500
+j2 = Jmax/2-d*500
+k1 = 0
+k2 = tube_k-1
+normal = 1
+}
+Segment
+{
+j1 = Jmax/2-d*500
+j2 = Jmax/2-d*500-1
+k1 = tube_k-1
+k2 = tube_k-1
+normal = 1
+}
+Segment
+{
+j1 = Jmax/2-d*500-1
+j2 = Jmax/2-d*500-1
+k1 = 1
+k2 = tube_k-1
+normal = -1
+}
+Segment
+{
+j1 = Jmax/2-d*500-1
+j2 = 0
+k1 = 1
+k2 = 1
+normal = 1
+}
+}
+
+
+Equipotential
+{
+C = U
+
+Segment
+{
+j1 = Jmax/2+d*500
+j2 = Jmax/2+d*500
+k1 = 0
+k2 = tube_k-1
+normal = -1
+}
+Segment
+{
+j1 = Jmax/2+d*500
+j2 = Jmax/2+d*500+1
+k1 = tube_k-1
+k2 = tube_k-1
+normal = 1
+}
+Segment
+{
+j1 = Jmax/2+d*500+1
+j2 = Jmax/2+d*500+1
+k1 = 1
+k2 = tube_k-1
+normal = 1
+}
+Segment
+{
+j1 = Jmax/2+d*500+1
+j2 = Jmax
+k1 = 1
+k2 = 1
+normal = 1
+}
+}
+
+DielectricRegion
+{
+	er = perm
+	j1 = 0
+	j2 = Jmax 
+	k1 = tube_k
+	k2 = tube_k+dk
+	normal = -1
+	QuseFlag = Qflag
+}
+
+Load
+{
+	speciesName = ions
+	density = init_density
+	np2c = n
+	x1MinMKS = load_l1 
+	x1MaxMKS = load_l2
+	x2MinMKS = load_r1
+	x2MaxMKS = load_r2
+}
+
+Load
+{
+	speciesName = electrons
+	density = init_density*0
+	np2c = n
+	x1MinMKS = 0.04
+	x1MaxMKS = 0.07
+	x2MinMKS = 0.026
+	x2MaxMKS = 0.028
+}
+
+MCC
+{
+gas = H
+pressure = p
+temperature = T
+eSpecies = electrons
+NElectronCollisions = 1
+NIonCollisions = 0
+iSpecies = ions
+ElecCollXSectionFile = ../mcc/N2/N2_cs_elastic.dat
+collisionFlag = 1
+}
+MCC
+{
+gas = H
+pressure = p
+temperature = T
+eSpecies = electrons
+NElectronCollisions = 1
+NIonCollisions = 0
+iSpecies = ions
+ElecCollXSectionFile = ../mcc/N2/N2_cs_exitation_1.dat
+collisionFlag = 1
+}
+MCC
+{
+gas = H
+pressure = p
+temperature = T
+eSpecies = electrons
+NElectronCollisions = 1
+NIonCollisions = 0
+iSpecies = ions
+ElecCollXSectionFile = ../mcc/N2/N2_cs_exitation_2.dat
+collisionFlag = 1
+}
+MCC
+{
+gas = H
+pressure = p
+temperature = T
+eSpecies = electrons
+NElectronCollisions = 1
+NIonCollisions = 0
+iSpecies = ions
+ElecCollXSectionFile = ../mcc/N2/N2_cs_exitation_3.dat
+collisionFlag = 1
+}
+MCC
+{
+gas = H
+pressure = p
+temperature = T
+eSpecies = electrons
+NElectronCollisions = 1
+NIonCollisions = 0
+iSpecies = ions
+ElecCollXSectionFile = ../mcc/N2/N2_cs_exitation_4.dat
+collisionFlag = 1
+}
+MCC
+{
+gas = H
+pressure = p
+temperature = T
+eSpecies = electrons
+NElectronCollisions = 1
+NIonCollisions = 0
+iSpecies = ions
+ElecCollXSectionFile = ../mcc/N2/N2_cs_exitation_5.dat
+collisionFlag = 1
+}
+MCC
+{
+gas = H
+pressure = p
+temperature = T
+eSpecies = electrons
+NElectronCollisions = 1
+NIonCollisions = 0
+iSpecies = ions
+ElecCollXSectionFile = ../mcc/N2/N2_cs_exitation_6.dat
+collisionFlag = 1
+}
+MCC
+{
+gas = H
+pressure = p
+temperature = T
+eSpecies = electrons
+NElectronCollisions = 1
+NIonCollisions = 0
+iSpecies = ions
+ElecCollXSectionFile = ../mcc/N2/N2_cs_exitation_7.dat
+collisionFlag = 1
+}
+MCC
+{
+gas = H
+pressure = p
+temperature = T
+eSpecies = electrons
+NElectronCollisions = 1
+NIonCollisions = 0
+iSpecies = ions
+ElecCollXSectionFile = ../mcc/N2/N2_cs_exitation_8.dat
+collisionFlag = 1
+}
+MCC
+{
+gas = H
+pressure = p
+temperature = T
+eSpecies = electrons
+NElectronCollisions = 1
+NIonCollisions = 0
+iSpecies = ions
+ElecCollXSectionFile = ../mcc/N2/N2_cs_exitation_9.dat
+collisionFlag = 1
+}
+MCC
+{
+gas = H
+pressure = p
+temperature = T
+eSpecies = electrons
+NElectronCollisions = 1
+NIonCollisions = 0
+iSpecies = ions
+ElecCollXSectionFile = ../mcc/N2/N2_cs_exitation_10.dat
+collisionFlag = 1
+}
+MCC
+{
+gas = H
+pressure = p
+temperature = T
+eSpecies = electrons
+NElectronCollisions = 1
+NIonCollisions = 0
+iSpecies = ions
+ElecCollXSectionFile = ../mcc/N2/N2_cs_exitation_11.dat
+collisionFlag = 1
+}
+MCC
+{
+gas = H
+pressure = p
+temperature = T
+eSpecies = electrons
+NElectronCollisions = 1
+NIonCollisions = 0
+iSpecies = ions
+ElecCollXSectionFile = ../mcc/N2/N2_cs_exitation_12.dat
+collisionFlag = 1
+}
+MCC
+{
+gas = H
+pressure = p
+temperature = T
+eSpecies = electrons
+NElectronCollisions = 1
+NIonCollisions = 0
+iSpecies = ions
+ElecCollXSectionFile = ../mcc/N2/N2_cs_exitation_13.dat
+collisionFlag = 1
+}
+MCC
+{
+gas = H
+pressure = p
+temperature = T
+eSpecies = electrons
+NElectronCollisions = 1
+NIonCollisions = 0
+iSpecies = ions
+ElecCollXSectionFile = ../mcc/N2/N2_cs_exitation_14.dat
+collisionFlag = 1
+}
+MCC
+{
+gas = H
+pressure = p
+temperature = T
+eSpecies = electrons
+NElectronCollisions = 1
+NIonCollisions = 0
+iSpecies = ions
+ElecCollXSectionFile = ../mcc/N2/N2_cs_exitation_15.dat
+collisionFlag = 1
+}
+MCC
+{
+gas = H
+pressure = p
+temperature = T
+eSpecies = electrons
+NElectronCollisions = 1
+NIonCollisions = 0
+iSpecies = ions
+ElecCollXSectionFile = ../mcc/N2/N2_cs_exitation_16.dat
+collisionFlag = 1
+}
+MCC
+{
+gas = H
+pressure = p
+temperature = T
+eSpecies = electrons
+NElectronCollisions = 1
+NIonCollisions = 0
+iSpecies = ions
+ElecCollXSectionFile = ../mcc/N2/N2_cs_exitation_17.dat
+collisionFlag = 1
+}
+MCC
+{
+gas = H
+pressure = p
+temperature = T
+eSpecies = electrons
+NElectronCollisions = 1
+NIonCollisions = 0
+iSpecies = ions
+ElecCollXSectionFile = ../mcc/N2/N2_cs_exitation_18.dat
+collisionFlag = 1
+}
+MCC
+{
+gas = H
+pressure = p
+temperature = T
+eSpecies = electrons
+NElectronCollisions = 1
+NIonCollisions = 0
+iSpecies = ions
+ElecCollXSectionFile = ../mcc/N2/N2_cs_exitation_19.dat
+collisionFlag = 1
+}
+MCC
+{
+gas = H
+pressure = p
+temperature = T
+eSpecies = electrons
+NElectronCollisions = 1
+NIonCollisions = 0
+iSpecies = ions
+ElecCollXSectionFile = ../mcc/N2/N2_cs_exitation_20.dat
+collisionFlag = 1
+}
+MCC
+{
+gas = H
+pressure = p
+temperature = T
+eSpecies = electrons
+NElectronCollisions = 1
+NIonCollisions = 0
+iSpecies = ions
+ElecCollXSectionFile = ../mcc/N2/N2_cs_exitation_21.dat
+collisionFlag = 1
+}
+MCC
+{
+gas = H
+pressure = p
+temperature = T
+eSpecies = electrons
+NElectronCollisions = 1
+NIonCollisions = 0
+iSpecies = ions
+ElecCollXSectionFile = ../mcc/N2/N2_cs_exitation_22.dat
+collisionFlag = 1
+}
+MCC
+{
+gas = H
+pressure = p
+temperature = T
+eSpecies = electrons
+NElectronCollisions = 1
+NIonCollisions = 0
+iSpecies = ions
+ElecCollXSectionFile = ../mcc/N2/N2_cs_exitation_23.dat
+collisionFlag = 1
+}
+MCC
+{
+gas = H
+pressure = p
+temperature = T
+eSpecies = electrons
+NElectronCollisions = 1
+NIonCollisions = 0
+iSpecies = ions
+ElecCollXSectionFile = ../mcc/N2/N2_cs_exitation_24.dat
+collisionFlag = 1
+}
+MCC
+{
+gas = H
+pressure = p
+temperature = T
+eSpecies = electrons
+NElectronCollisions = 1
+NIonCollisions = 0
+iSpecies = ions
+ElecCollXSectionFile = ../mcc/N2/N2_cs_exitation_25.dat
+collisionFlag = 1
+}
+MCC
+{
+gas = H
+pressure = p
+temperature = T
+eSpecies = electrons
+NElectronCollisions = 1
+NIonCollisions = 0
+iSpecies = ions
+ElecCollXSectionFile = ../mcc/N2/N2_cs_exitation_26.dat
+collisionFlag = 1
+}
+MCC
+{
+gas = H
+pressure = p
+temperature = T
+eSpecies = electrons
+NElectronCollisions = 1
+NIonCollisions = 0
+iSpecies = ions
+ElecCollXSectionFile = ../mcc/N2/N2_cs_exitation_27.dat
+collisionFlag = 1
+}
+MCC
+{
+gas = H
+pressure = p
+temperature = T
+eSpecies = electrons
+NElectronCollisions = 1
+NIonCollisions = 0
+iSpecies = ions
+ElecCollXSectionFile = ../mcc/N2/N2_cs_exitation_28.dat
+collisionFlag = 1
+}
+MCC
+{
+gas = H
+pressure = p
+temperature = T
+eSpecies = electrons
+NElectronCollisions = 1
+NIonCollisions = 0
+iSpecies = ions
+ElecCollXSectionFile = ../mcc/N2/N2_cs_exitation_29.dat
+collisionFlag = 1
+}
+MCC
+{
+gas = H
+pressure = p
+temperature = T
+eSpecies = electrons
+NElectronCollisions = 1
+NIonCollisions = 0
+iSpecies = ions
+ElecCollXSectionFile = ../mcc/N2/N2_cs_exitation_30.dat
+collisionFlag = 1
+}
+MCC
+{
+gas = H
+pressure = p
+temperature = T
+eSpecies = electrons
+NElectronCollisions = 1
+NIonCollisions = 0
+iSpecies = ions
+ElecCollXSectionFile = ../mcc/N2/N2_cs_exitation_31.dat
+collisionFlag = 1
+}
+MCC
+{
+gas = H
+pressure = p
+temperature = T
+eSpecies = electrons
+NElectronCollisions = 1
+NIonCollisions = 0
+iSpecies = ions
+ElecCollXSectionFile = ../mcc/N2/N2_cs_exitation_32.dat
+collisionFlag = 1
+}
+MCC
+{
+gas = H
+pressure = p
+temperature = T
+eSpecies = electrons
+NElectronCollisions = 1
+NIonCollisions = 0
+iSpecies = ions
+ElecCollXSectionFile = ../mcc/N2/N2_cs_exitation_33.dat
+collisionFlag = 1
+}
+MCC
+{
+gas = H
+pressure = p
+temperature = T
+eSpecies = electrons
+NElectronCollisions = 1
+NIonCollisions = 0
+iSpecies = ions
+ElecCollXSectionFile = ../mcc/N2/N2_cs_exitation_34.dat
+collisionFlag = 1
+}
+MCC
+{
+gas = H
+pressure = p
+temperature = T
+eSpecies = electrons
+NElectronCollisions = 1
+NIonCollisions = 0
+iSpecies = ions
+ElecCollXSectionFile = ../mcc/N2/N2_cs_exitation_35.dat
+collisionFlag = 1
+}
+MCC
+{
+gas = H
+pressure = p
+temperature = T
+eSpecies = electrons
+NElectronCollisions = 1
+NIonCollisions = 0
+iSpecies = ions
+ElecCollXSectionFile = ../mcc/N2/N2_cs_exitation_36.dat
+collisionFlag = 1
+}
+MCC
+{
+gas = H
+pressure = p
+temperature = T
+eSpecies = electrons
+NElectronCollisions = 1
+NIonCollisions = 0
+iSpecies = ions
+ElecCollXSectionFile = ../mcc/N2/N2_cs_exitation_37.dat
+collisionFlag = 1
+}
+MCC
+{
+gas = H
+pressure = p
+temperature = T
+eSpecies = electrons
+NElectronCollisions = 1
+NIonCollisions = 0
+iSpecies = ions
+ElecCollXSectionFile = ../mcc/N2/N2_cs_exitation_38.dat
+collisionFlag = 1
+}
+MCC
+{
+gas = H
+pressure = p
+temperature = T
+eSpecies = electrons
+NElectronCollisions = 1
+NIonCollisions = 0
+iSpecies = ions
+ElecCollXSectionFile = ../mcc/N2/N2_cs_exitation_39.dat
+collisionFlag = 1
+}
+MCC
+{
+gas = H
+pressure = p
+temperature = T
+eSpecies = electrons
+NElectronCollisions = 1
+NIonCollisions = 0
+iSpecies = ions
+ElecCollXSectionFile = ../mcc/N2/N2_cs_exitation_40.dat
+collisionFlag = 1
+}
+MCC
+{
+gas = H
+pressure = p
+temperature = T
+eSpecies = electrons
+NElectronCollisions = 1
+NIonCollisions = 0
+iSpecies = ions
+ElecCollXSectionFile = ../mcc/N2/N2_cs_exitation_41.dat
+collisionFlag = 1
+}
+MCC
+{
+gas = H
+pressure = p
+temperature = T
+eSpecies = electrons
+NElectronCollisions = 1
+NIonCollisions = 0
+iSpecies = ions
+ElecCollXSectionFile = ../mcc/N2/N2_cs_exitation_42.dat
+collisionFlag = 1
+}
+MCC
+{
+gas = H
+pressure = p
+temperature = T
+eSpecies = electrons
+NElectronCollisions = 1
+NIonCollisions = 0
+iSpecies = ions
+ElecCollXSectionFile = ../mcc/N2/N2_cs_exitation_43.dat
+collisionFlag = 1
+}
+MCC
+{
+gas = H
+pressure = p
+temperature = T
+eSpecies = electrons
+NElectronCollisions = 1
+NIonCollisions = 0
+iSpecies = ions
+ElecCollXSectionFile = ../mcc/N2/N2_cs_exitation_44.dat
+collisionFlag = 1
+}
+MCC
+{
+gas = H
+pressure = p
+temperature = T
+eSpecies = electrons
+NElectronCollisions = 1
+NIonCollisions = 0
+iSpecies = ions
+ElecCollXSectionFile = ../mcc/N2/N2_cs_ionization.dat
+collisionFlag = 1
+}
+MCC
+{
+gas = H
+pressure = p
+temperature = T
+eSpecies = electrons
+NElectronCollisions = 1
+NIonCollisions = 1
+iSpecies = ions
+ElecCollXSectionFile = ../mcc/N2/N2_cs_el_0.dat
+IonCollXSectionFile  = ../mcc/N2/N2_cs_ion_elastic.dat
+collisionFlag = 1
+}
+
+
+}
+
+
+
+
+
+
+
+
+
