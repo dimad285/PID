@@ -5,6 +5,7 @@ import time
 import matplotlib.pyplot as plt
 import threading
 import shutil
+import csv
 
 cycl = 100
 target = 5000
@@ -63,12 +64,14 @@ def inpRead(name, *arg):
     return u, p, d
 
 
-def inpChange(name, u, p, *arg):
+def inpChange(name, u, p, d, *arg):
     new = ''
     with open(name,'r') as inp:
         i = 0
         for lines in inp:
-            if i == 8:
+            if i == 7:
+                new = new + '\td = ' + str(d) + '\n'
+            elif i == 8:
                 new = new + '\tU = ' + str(u) + '\n'
             elif i == 9:
                 new = new + '\tp = ' + str(p) + '\n'
@@ -98,6 +101,7 @@ def logFile(name, *log):
                 f.write(str(j[i])+'\t')
 
 def clearLog(path):
+    
     ls = os.listdir(path)
     if 'backup' in ls:
         ls.remove('backup')
@@ -106,6 +110,7 @@ def clearLog(path):
             os.remove(f'{path}/{i}')
     else:
         for i in ls:
+            print(i)
             os.remove(f'{path}/{i}')
 
 
@@ -114,7 +119,7 @@ def drawParticles():
 
 
 
-def run(p, uStart, iter, thread, failFlag = False, graphFlag = False, stopFlag = False):
+def run(p, uStart, d, iter, thread, failFlag = False, graphFlag = False, stopFlag = False):
 
     ############################
             #SETUP#
@@ -137,7 +142,7 @@ def run(p, uStart, iter, thread, failFlag = False, graphFlag = False, stopFlag =
             print('Error, wrong graph input')
 
 
-    inpChange(f'{inputPath}{thread}.inp',uStart, p)
+    inpChange(f'{inputPath}{thread}.inp',uStart, p, d)
     ############################
 
     u = inpRead(f'{inputPath}{thread}.inp')[0]
@@ -166,14 +171,14 @@ def run(p, uStart, iter, thread, failFlag = False, graphFlag = False, stopFlag =
             print('Error, wrong graph input')
 
 
-    inpChange(f'{inputPath}{thread}.inp',voltCalc(target,logI[0],logI[0],u,coefP,coefD),p=p)
+    inpChange(f'{inputPath}{thread}.inp',voltCalc(target,logI[0],logI[0],u,coefP,coefD), p, d)
     
 
     for i in range(2, iter+1, 1):
 
         if stopFlag:
             break
-        logFile(f'{logPath}/{p}.txt', logT, logU, logI)
+        logFile(f'{logPath}/{d}/{p}.txt', logT, logU, logI)
         u = inpRead(f'{inputPath}{thread}.inp')[0]
         
         os.system(cmdBin(cycl,thread))
@@ -184,7 +189,7 @@ def run(p, uStart, iter, thread, failFlag = False, graphFlag = False, stopFlag =
         
         n = dump.read(f'dump/h5/{thread}.h5')
         if n == 0:
-            logFile(f'{logPath}/{p}.txt', logT, logU, logI)
+            logFile(f'{logPath}/{d}/{p}.txt', logT, logU, logI)
             print(f'\033[0;31mThread {thread} finished {p} torr with 0 ions\033[0;0m')
             if failFlag:
                 P.append(p)
@@ -205,20 +210,41 @@ def run(p, uStart, iter, thread, failFlag = False, graphFlag = False, stopFlag =
         elif graphFlag != False:
             print('Error, wrong graph input')
 
-        inpChange(f'{inputPath}{thread}.inp',voltCalc(target,logI[i-1],logI[i-2],u,coefP,coefD),p=p)
+        inpChange(f'{inputPath}{thread}.inp',voltCalc(target,logI[i-1],logI[i-2],u,coefP,coefD), p=p, d=d)
 
     tEnd = time.time()
     print(f'\033[0;32mThread {thread} finished {p} torr in {tEnd - tStart} seconds\033[0;0m')
-    logFile(f'{logPath}/{p}.txt', logT, logU, logI)
+    logFile(f'{logPath}/{d}/{p}.txt', logT, logU, logI)
     if graphFlag == True:
         plt.savefig(f'graphs/{p}.png')
         
 
-def run_thread(P:float, U:float, iter, thread):
+def run_thread(P:float, U:float, d:float, iter, thread):
 
-    run(P, U, iter = iter, thread = thread, graphFlag = False)
+    run(P, U, d, iter = iter, thread = thread, graphFlag = False)
     freeThreads.append(thread)
 
+
+def getTask(path:str):
+    
+    p = list()
+    u = list()
+    d = list()
+    
+    with open(path) as csvfile:
+        reader = csv.reader(csvfile, delimiter=',')
+        for row in reader:
+            d.append(float(row[0]))
+            p.append(float(row[1]))
+            u.append(float(row[2]))      
+    
+    d_list = set(d)
+    for i in d_list:
+        os.mkdir(f'{logPath}/{i}')
+    
+    return d, p, u
+    
+    
     
 if __name__ == '__main__':
 
@@ -232,18 +258,18 @@ if __name__ == '__main__':
 
     clearLog(logPath)
 
-    P_copy = P
-    U_copy = U
+    d_task, p_task, u_task = getTask('task.csv')
     freeThreads = [i+1 for i in range(tc)]
     n = 1
     tStart = time.time()
 
     while True:
-        if len(P_copy)>0:
+        if len(p_task)>0:
             if n < tc+1:
-                t = threading.Thread(target=run_thread, args=(P_copy[0], U_copy[0], it, freeThreads[0]))
-                P_copy.pop(0)
-                U_copy.pop(0)
+                t = threading.Thread(target=run_thread, args=(p_task[0], u_task[0], d_task[0], it, freeThreads[0]))
+                p_task.pop(0)
+                u_task.pop(0)
+                d_task.pop(0)
                 t.start()
                 freeThreads.pop(0)
         n = threading.active_count()
