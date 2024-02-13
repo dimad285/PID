@@ -2,83 +2,77 @@ import os
 import statistics
 import matplotlib.pyplot as plt
 import math
+import csv
 
-dir = 'Log'
-ls = os.listdir(dir)
-ls.remove('backup')
-#print(ls)
-u_mean = list()
-u_er = list()
-u_last = list()
-p = list()
+def read_data_from_files(directory):
+    data_paths = {}
+    for root, dirs, files in os.walk(directory):
+        distance = os.path.basename(root)  # Use folder name as distance
+        for file in files:
+            if file.endswith('.txt'):  # Assuming your data files are .txt
+                if distance not in data_paths:
+                    data_paths[distance] = []
+                data_paths[distance].append(os.path.join(root, file))
+    return data_paths
 
-r = 5
-
-for i in ls:
-    time = list()
-    U = list()
-    I = list()
-
-    with open(f'{dir}/{i}', 'r') as f:
-        f.readline()
-        while(True):
-            l = f.readline()
-            L = l.split('\t') 
-            L = L[:3]
-            if l == '':
+def process_file(file_path, range_value):
+    time, voltage = [], []
+    with open(file_path, 'r') as file:
+        #file.readline()  # Skip the header or first line
+        for line in file:
+            if line.strip() == '':
                 break
-            L = [float(i) for i in L]
-            time.append(L[0])
-            U.append(L[1])
-            I.append(L[2])
-            
-    MN = statistics.mean(U[len(U)-r:])
-    u_last.append(U[-1])
-    u_mean.append(MN)
+            values = [float(i) for i in line.split('\t')[:3]]
+            time.append(values[0])
+            voltage.append(values[1])
+    if len(voltage) > range_value:
+        mean_voltage = statistics.mean(voltage[-range_value:])
+        standard_deviation = math.sqrt(sum((x - mean_voltage) ** 2 for x in voltage[-range_value:]) / (range_value - 1))
+    else:
+        mean_voltage = voltage[0]  # Or some other default value
+        standard_deviation = 0  # Or some other default value
+    return mean_voltage, standard_deviation
 
-    SD = 0
-    for j in U[len(U)-r:]:
-        SD += (j - MN)**2
-    SD = math.sqrt(SD/(r-1))
-    u_er.append(SD)
-    p.append(float(i.rstrip('.txt')))
+def sort_data(data):
+    return sorted(data, key=lambda x: x[0])
 
+def write_to_csv(file_path, data):
+    with open(file_path, 'w', newline='') as csvfile:
+        csvwriter = csv.writer(csvfile)
+        csvwriter.writerow(['Distance', 'Pressure', 'Mean Voltage'])
+        for distance, items in data.items():
+            for item in items:
+                csvwriter.writerow([distance, item[0], item[1]])
 
-for j in range(len(p)):  
-    for i in range(len(p)- j -1):
-        if p[i+1]>p[i]:
-            continue
-        else:
-            tmpP = p[i]
-            tmpU = u_mean[i]
-            tmpErr = u_er[i]
+def plot_data(datasets):
+    plt.figure()
+    for distance, data in datasets.items():
+        pressures, mean_voltages = zip(*sorted(data, key=lambda x: x[0]))
+        plt.plot(pressures, mean_voltages, label=f'Distance {distance}')
+    plt.yscale('log')
+    plt.xscale('log')
+    plt.grid(True, 'both', 'both')
+    plt.legend()
+    plt.title('Voltage vs Pressure at Different Distances')
+    plt.xlabel('Pressure')
+    plt.ylabel('Mean Voltage')
+    plt.show()
 
-            p[i] = p[i+1]
-            p[i+1] = tmpP
+def main():
+    directory = 'Log'
+    range_value = 5
+    data_paths = read_data_from_files(directory)
+    processed_data = {}
 
-            u_mean[i] = u_mean[i+1]
-            u_mean[i+1] = tmpU
+    for distance, file_paths in data_paths.items():
+        processed_data[distance] = []
+        for file_path in file_paths:
+            mean_voltage, standard_deviation = process_file(file_path, range_value)
+            pressure = float(os.path.basename(file_path).rstrip('.txt'))
+            processed_data[distance].append((pressure, mean_voltage))
 
-            u_er[i] = u_er[i+1]
-            u_er[i+1] = tmpErr
+    write_to_csv('results.csv', processed_data)
+    plot_data(processed_data)
 
-#print(u_mean)
-#print(u_er)
-#print(p)
-
-with open('line.txt', 'w') as f:
-    for i in range(len(u_mean)):
-        f.write(f'{p[i]}\t{u_mean[i]}\n')
-
-f, ax = plt.subplots()
-#ax.errorbar(p,u_mean, yerr=u_er)
-ax.plot(p, u_mean)
-#ax.plot(p, u_last)
-#ax.legend(["mean", "last"])
-#ax.set_ylim(250, 1000)
-#ax.set_xlim(0.01, 10)
-ax.set_yscale('log')
-ax.set_xscale('log')
-ax.grid(True, 'both', axis = 'both')
-plt.show() 
-
+if __name__ == '__main__':
+    main()
