@@ -1,231 +1,153 @@
 import dump
 import os
-import argparse
 import time
-import matplotlib.pyplot as plt
 import threading
 import shutil
 import csv
 
-cycl = 100
-target = 5000
+# Constants
+CYCLE = 100
+TARGET_IONS = 5000
+COEF_P = 0.00005  # Proportional coefficient in PID controller
+COEF_D = 0.0005  # Differential coefficient in PID controller
 
-coefP = 0.00005
-coefD = 0.0005
-#Ustart = 450
-
-P = [0.15, 0.2, 0.3, 0.5, 0.8, 1, 1.15, 1.2, 1.3, 1.5, 1.8, 2]
-U = [1100, 700, 625, 400, 360, 360, 400, 400, 400, 440, 470, 500]
-D = []
-#coefD = []
-#coefP = []
-#P = [0.12]
-#U = [500]
-#L = []
-
-grphFlag = True
-
-inputPath = 'Input/test'
-logPath = 'Log'
-
-def cmdStartH5(cycl, thread):
-    cmd = f'oopicpro -i {inputPath}{thread}.inp -nox -s {cycl} -h5 -or -d dump/bin/{thread} -sf dump/h5/{thread} -dp {cycl}' 
-    return cmd
-
-def cmdStartBin(cycl, thread):
-    cmd = f'oopicpro -i {inputPath}{thread}.inp -nox -s {cycl} -sf dump/bin/{thread} -dp {cycl}' 
-    return cmd
-
-def cmdH5(cycl, thread):
-    cmd = f'oopicpro -i {inputPath}{thread}.inp -nox -s {cycl} -h5 -or -d dump/bin/{thread} -sf dump/h5/{thread} -dp {cycl}' 
-    return cmd
-
-def cmdBin(cycl, thread):
-    cmd = f'oopicpro -i {inputPath}{thread}.inp -nox -s {cycl} -d dump/bin/{thread} -sf dump/bin/{thread} -dp {cycl}' 
-    return cmd
+INPUT_PATH = 'Input/test'
+LOG_PATH = 'Log'
+DUMP_PATH = 'Input/dump'
+DUMP_HISTORY_PATH = 'history'
 
 
-def inpRead(name, *arg):
-    u = 0
-    p = 0
-    d = 0
-    with open(name,'r') as inp:
-        i = 0
-        for lines in inp:
-            if i == 7:
-                d = float(lines.lstrip('\td = '))
-            if i == 8:
-                u = float(lines.lstrip('\tU = '))
-            if i == 9:
-                p = float(lines.lstrip('\tp = '))
-                break
-            i = i+1
+# Function to run oopicpro with h5 dump in cmd mode
+def cmdH5(cycle: int, thread: int, path: str, dump: str) -> str:
+    return f'oopicpro -i {path}{thread}.inp -nox -s {cycle} -h5 -or -d {dump}/bin/{thread} -sf {dump}/h5/{thread} -dp {cycle}' 
+# Function to run oopicpro with bin dump in cmd mode
+def cmdBin(cycle: int, thread: int, path: str, dump: str) -> str:
+    return f'oopicpro -i {path}{thread}.inp -nox -s {cycle} -d {dump}/bin/{thread} -sf {dump}/bin/{thread} -dp {cycle}' 
+# Function to start simulation with binary dump
+def cmdStartBin(thread: int, path: str, dump: str) -> str:
+    return f'oopicpro -i {path}{thread}.inp -nox -s 1 -sf {dump}/bin/{thread} -dp 1'
 
+def cmdDump(thread: int, path: str, dump: str) -> str:
+    return f'oopicpro -i {path}{thread}.inp -nox -s 1 -d Input/dump/bin/{thread} -sf {dump} -dp 1'
+# Function to run the simulation
+def cmdRun(cycle: int, thread: int, path: str, dump: str):
+    os.system(cmdBin(cycle, thread, path, dump))
+    time.sleep(0.1)
+    os.system(cmdH5(1, thread, path, dump))
+    time.sleep(0.1)
+
+# Function to read input file
+def inpRead(name: str) -> tuple:
+    with open(name, 'r') as inp:
+        lines = inp.readlines()
+        d = float(lines[7].strip('\td = '))
+        u = float(lines[8].strip('\tU = '))
+        p = float(lines[9].strip('\tp = '))
     return u, p, d
 
+# Function to change input file
+def inpChange(name: str, u: float, p: float, d: float):
+    with open(name, 'r') as inp:
+        lines = inp.readlines()
+    lines[7] = '\td = ' + str(d) + '\n'
+    lines[8] = '\tU = ' + str(u) + '\n'
+    lines[9] = '\tp = ' + str(p) + '\n'
+    with open(name, 'w') as newinp:
+        newinp.writelines(lines)
 
-def inpChange(name, u, p, d, *arg):
-    new = ''
-    with open(name,'r') as inp:
-        i = 0
-        for lines in inp:
-            if i == 7:
-                new = new + '\td = ' + str(d) + '\n'
-            elif i == 8:
-                new = new + '\tU = ' + str(u) + '\n'
-            elif i == 9:
-                new = new + '\tp = ' + str(p) + '\n'
-            else:
-                new = new + lines
-            i = i+1
+# Function to calculate new voltage using PID algorithm
+def voltCalc(targetN, N2, N1, u):
+    return u + (targetN - N2) * COEF_P - (N2 - N1) * COEF_D
 
-    with open(name,'w') as newinp:
-        newinp.write(new)
-
-
-def voltCalc(targetN, N2, N1, u, coefP, coefD):
-    newU = u + (targetN - N2)*coefP - (N2 - N1)*coefD
-    if N2 < targetN/5:
-        newU = newU + 500/N2
-    #elif N2 > target*2:
-    #    newU = newU - N2/1000
-    return newU
-
-
-def logFile(name, *log):
-    
+# Function to write log to file
+def logFile(name: str, *log):
     with open(name, 'w') as f:
         for i in range(len(log[0])):
-            f.write('\n')
-            for j in log:
-                f.write(str(j[i])+'\t')
+            f.write('\t'.join(str(j[i]) for j in log) + '\n')
 
-def clearLog(path):
+# Function to clear log folder
+def clearLog(path: str):
+    for item in os.listdir(path):
+        item_path = os.path.join(path, item)
+        if os.path.isfile(item_path):
+            os.remove(item_path)
+        else:  # Assume it's a folder
+            shutil.rmtree(item_path)
+            
+def dumpHistory(thread: int, path: str, dump: str):
+    '''dumps history of a simulation in a form of binary dump file'''
+    os.system(cmdDump(thread, path, dump))
+      
+
+def historyFolder(path: str, distance: list, pressure: list[list]):
     
-    ls = os.listdir(path)
-    if 'backup' in ls:
-        ls.remove('backup')
-        for i in ls:
-            shutil.copyfile(f'{path}/{i}', f'{path}/backup/{i}')
-            os.remove(f'{path}/{i}')
-    else:
-        for i in ls:
-            print(i)
-            os.remove(f'{path}/{i}')
+    for item in os.listdir(path):
+        item_path = os.path.join(path, item)
+        if os.path.isfile(item_path):
+            os.remove(item_path)
+        else:  # Assume it's a folder
+            shutil.rmtree(item_path)
+            
+    for dist, pres in zip(distance, pressure):
+        dist_path = os.path.join(path, f'{dist}')
+        if not os.path.exists(dist_path):
+            os.makedirs(dist_path)
+        
+        pres_path = os.path.join(dist_path, f'{pres}')
+        if not os.path.exists(pres_path):
+            os.makedirs(pres_path)    
+    
 
-
-def drawParticles():
-    pass
-
-
-
-def run(p, uStart, d, iter, thread, failFlag = False, graphFlag = False, stopFlag = False):
-
+def run(p:float, uStart:float, d:float, iter:int, thread:int, inter_dump: int):
+    '''runs oopicpro with PID controler'''
+    
     ############################
             #SETUP#
     tStart = time.time()
     print(f'\033[0;34mThread {thread} started {p} Torr\033[0;0m')
-    global freeThreads
-    logU = []
-    logI = []
-    logT = []
-
-    if graphFlag == True:
-        fig, (ax1, ax2) = plt.subplots(2)
-        fig.set_size_inches((12,8))
-        ax1.set_xlabel('Iteration')
-        ax1.set_ylabel('U')
-        ax2.set_xlabel('Iteration')
-        ax2.set_ylabel('Ions')
-        plt.ion()
-    elif graphFlag != False:
-            print('Error, wrong graph input')
-
-
-    inpChange(f'{inputPath}{thread}.inp',uStart, p, d)
-    ############################
-
-    u = inpRead(f'{inputPath}{thread}.inp')[0]
-    
-    os.system(cmdStartBin(cycl,thread))
+    logU = [uStart]
+    logI = [TARGET_IONS]
+    logT = [-1]
+    k = 0
+    inpChange(f'{INPUT_PATH}{thread}.inp',uStart, p, d)
+    os.system(cmdStartBin(thread, INPUT_PATH, DUMP_PATH))
     time.sleep(0.1)
+    ############################   
 
-    os.system(cmdStartH5(1, thread))
-    time.sleep(0.1)
-    
-    n = dump.read(f'dump/h5/{thread}.h5')
-    if n == 0:
-        logFile(f'{logPath}/{p}.txt', logT, logU, logI)
-        print(f'\033[0;31mThread {thread} finished {p} torr with 0 ions\033[0;0m')
-        return
-    
-    logU.append(u); logI.append(n); logT.append(1)
-    print(f'Thread {thread}\t{p} Torr Iteration {1}: U = {"%.2f" % u} {n} Ions')
-
-    if graphFlag == True:
-        ax1.plot(logT, logU)
-        ax2.plot(logT, logI)
-        plt.show(block = False)
-        plt.pause(0.5)
-    elif graphFlag != False:
-            print('Error, wrong graph input')
-
-
-    inpChange(f'{inputPath}{thread}.inp',voltCalc(target,logI[0],logI[0],u,coefP,coefD), p, d)
-    
-
-    for i in range(2, iter+1, 1):
-
-        if stopFlag:
-            break
-        logFile(f'{logPath}/{d}/{p}.txt', logT, logU, logI)
-        u = inpRead(f'{inputPath}{thread}.inp')[0]
+    for i in range(iter):   #main loop
         
-        os.system(cmdBin(cycl,thread))
-        time.sleep(0.1)
-
-        os.system(cmdH5(1, thread))
-        time.sleep(0.1)
-        
-        n = dump.read(f'dump/h5/{thread}.h5')
-        if n == 0:
-            logFile(f'{logPath}/{d}/{p}.txt', logT, logU, logI)
-            print(f'\033[0;31mThread {thread} finished {p} torr with 0 ions\033[0;0m')
-            if failFlag:
-                P.append(p)
-                U.append(uStart)
-            return
-        
+        cmdRun(CYCLE, thread, INPUT_PATH, DUMP_PATH)
+        n = dump.read(f'{DUMP_PATH}/h5/{thread}.h5')
+        u = inpRead(f'{INPUT_PATH}{thread}.inp')[0]
         logU.append(u); logI.append(n); logT.append(i)
         
+        if n == 0:
+            logFile(f'{LOG_PATH}/{d}/{p}.txt', logT, logU, logI)
+            print(f'\033[0;31mThread {thread} finished {p} torr with 0 ions\033[0;0m')
+            return
+        
+        inpChange(f'{INPUT_PATH}{thread}.inp',voltCalc(TARGET_IONS,logI[i-1],logI[i-2],u), p, d)
+        logFile(f'{LOG_PATH}/{d}/{p}.txt', logT, logU, logI)
         print(f'Thread {thread}\t{p} Torr Iteration {i}: U = {"%.2f" % u} {n} Ions')
-
-        if graphFlag == True:
-            ax1.cla()
-            ax2.cla()
-            ax1.plot(logT, logU)
-            ax2.plot(logT, logI)
-            plt.draw()
-            plt.pause(0.5)
-        elif graphFlag != False:
-            print('Error, wrong graph input')
-
-        inpChange(f'{inputPath}{thread}.inp',voltCalc(target,logI[i-1],logI[i-2],u,coefP,coefD), p=p, d=d)
-
+        
+        
+        if inter_dump != 0 and (k+1) == inter_dump:
+            name:str = DUMP_HISTORY_PATH + f'/{d}_{p}_{i}'
+            dumpHistory(thread, INPUT_PATH, name)
+            k = 0
+        
     tEnd = time.time()
     print(f'\033[0;32mThread {thread} finished {p} torr in {tEnd - tStart} seconds\033[0;0m')
-    logFile(f'{logPath}/{d}/{p}.txt', logT, logU, logI)
-    if graphFlag == True:
-        plt.savefig(f'graphs/{p}.png')
+    logFile(f'{LOG_PATH}/{d}/{p}.txt', logT, logU, logI)
         
 
-def run_thread(P:float, U:float, d:float, iter, thread):
-
-    run(P, U, d, iter = iter, thread = thread, graphFlag = False)
+def runThread(P:float, U:float, d:float, iter, thread, inter_dump):
+    '''runs thread with PID controler''' 
+    run(P, U, d, iter, thread, inter_dump)
     freeThreads.append(thread)
 
-
 def getTask(path:str):
+    '''reads csv task file and returns lists of P, U, D'''
     
     p = list()
     u = list()
@@ -233,6 +155,7 @@ def getTask(path:str):
     
     with open(path) as csvfile:
         reader = csv.reader(csvfile, delimiter=',')
+        next(reader)  # Skip header line in csv
         for row in reader:
             d.append(float(row[0]))
             p.append(float(row[1]))
@@ -240,46 +163,45 @@ def getTask(path:str):
     
     d_list = set(d)
     for i in d_list:
-        os.mkdir(f'{logPath}/{i}')
+        os.mkdir(f'{LOG_PATH}/{i}')
     
     return d, p, u
-    
     
     
 if __name__ == '__main__':
 
     tc = int(input('Number of threads '))
     it = int(input('Number of iterations '))
-    subL = int(len(P)/tc)
     threadList = list()
 
     for i in range(tc):
-        shutil.copyfile(f'{inputPath}.inp', f'{inputPath}{i+1}.inp')
+        shutil.copyfile(f'{INPUT_PATH}.inp', f'{INPUT_PATH}{i+1}.inp')    #copies input file for each thread
 
-    clearLog(logPath)
+    clearLog(LOG_PATH)    #clears log folder
+    clearLog(DUMP_HISTORY_PATH)    #clears history folder
 
-    d_task, p_task, u_task = getTask('task.csv')
-    freeThreads = [i+1 for i in range(tc)]
-    n = 1
-    tStart = time.time()
+    d_task, p_task, u_task = getTask('task.csv')    #reads task file
+    freeThreads = [i+1 for i in range(tc)]    #list of free threads
+    n = 1   #number of active threads
+    tStart = time.time()    #time counter
 
-    while True:
+    while True: #main loop
         if len(p_task)>0:
             if n < tc+1:
-                t = threading.Thread(target=run_thread, args=(p_task[0], u_task[0], d_task[0], it, freeThreads[0]))
-                p_task.pop(0)
-                u_task.pop(0)
-                d_task.pop(0)
-                t.start()
-                freeThreads.pop(0)
-        n = threading.active_count()
-        time.sleep(1)
-        if n == 1:
-            print('\033[1;32mDONE\033[0;0m')
-            break
+                t = threading.Thread(target=runThread, args=(p_task[0], u_task[0], d_task[0], it, freeThreads[0], 1)) #creates new thread
+                p_task.pop(0)    #deletes first element from list
+                u_task.pop(0)    #deletes first element from list
+                d_task.pop(0)    #deletes first element from list
+                t.start()    #starts thread
+                freeThreads.pop(0)    #deletes first element from list
+        n = threading.active_count()    #number of active threads
+        time.sleep(1)    #waits for 1 second
+        if n == 1:    #if there is only one active thread
+            print('\033[1;32mDONE\033[0;0m')    #prints DONE
+            break    #breaks the loop
 
-    tEnd = time.time()
-    print(f'time {tEnd-tStart} seconds')
+    tEnd = time.time()    #time counter
+    print(f'time {tEnd-tStart} seconds')    #prints time
 
    
 
