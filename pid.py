@@ -4,10 +4,11 @@ import time
 import threading
 import shutil
 import csv
+import math
 
 # Constants
-CYCLE = 100
-TARGET_IONS = 5000
+CYCLE = 100 #number of pic simulation cycles per PID iteration
+TARGET_IONS = 5000  #target number of ions
 COEF_P = 0.00005  # Proportional coefficient in PID controller
 COEF_D = 0.0005  # Differential coefficient in PID controller
 
@@ -15,6 +16,12 @@ INPUT_PATH = 'Input/test'
 LOG_PATH = 'Log'
 DUMP_PATH = 'Input/dump'
 DUMP_HISTORY_PATH = 'history'
+
+DUMP_ITER = 1   #number of iterations between history dump; 0 - no dump
+
+TIME_MULT = 1   #time multiplier
+ECYCLE = 1000   #number of electron subcycles per oopicpro cycle
+BASE_TIME = 1.0e-12  #base time for oopicpro
 
 
 # Function to run oopicpro with h5 dump in cmd mode
@@ -28,13 +35,24 @@ def cmdStartBin(thread: int, path: str, dump: str) -> str:
     return f'oopicpro -i {path}{thread}.inp -nox -s 1 -sf {dump}/bin/{thread} -dp 1'
 
 def cmdDump(thread: int, path: str, dump: str) -> str:
-    return f'oopicpro -i {path}{thread}.inp -nox -s 1 -d Input/dump/bin/{thread} -sf {dump} -dp 1'
+    return f'oopicpro -i {path}{thread}.inp -nox -s 1 -h5 -or -d Input/dump/bin/{thread} -sf {dump} -dp 1'
+
 # Function to run the simulation
 def cmdRun(cycle: int, thread: int, path: str, dump: str):
     os.system(cmdBin(cycle, thread, path, dump))
     time.sleep(0.1)
     os.system(cmdH5(1, thread, path, dump))
     time.sleep(0.1)
+    
+def modelInit(name:str):   
+    global TIME_MULT
+    global BASE_TIME
+    global ECYCLE      
+    with open(name, 'r') as inp:
+        lines = inp.readlines()
+        TIME_MULT = float(lines[26].strip('\ttime_mult = '))
+        BASE_TIME = float(lines[27].strip('\tbaseTime = '))
+        ECYCLE = int(lines[32].strip('\teCycle = '))
 
 # Function to read input file
 def inpRead(name: str) -> tuple:
@@ -78,6 +96,24 @@ def dumpHistory(thread: int, path: str, dump: str):
     '''dumps history of a simulation in a form of binary dump file'''
     os.system(cmdDump(thread, path, dump))
       
+def getTask(path:str):
+    '''reads csv task file and returns lists of P, U, D'''  
+    p = list()
+    u = list()
+    d = list()
+    with open(path) as csvfile:
+        reader = csv.reader(csvfile, delimiter=',')
+        next(reader)  # Skip header line in csv
+        for row in reader:
+            d.append(float(row[0]))
+            p.append(float(row[1]))
+            u.append(float(row[2]))      
+    
+    d_list = set(d)
+    for i in d_list:
+        os.mkdir(f'{LOG_PATH}/{i}')
+    
+    return d, p, u
 
 def historyFolder(path: str, distance: list, pressure: list[list]):
     
@@ -97,7 +133,11 @@ def historyFolder(path: str, distance: list, pressure: list[list]):
         if not os.path.exists(pres_path):
             os.makedirs(pres_path)    
     
-
+def copyInputFiles(tc: int, input_path: str):
+    for i in range(tc):
+        shutil.copyfile(f'{input_path}.inp', f'{input_path}{i+1}.inp')
+        
+        
 def run(p:float, uStart:float, d:float, iter:int, thread:int, inter_dump: int):
     '''runs oopicpro with PID controler'''
     
@@ -132,7 +172,7 @@ def run(p:float, uStart:float, d:float, iter:int, thread:int, inter_dump: int):
         
         
         if inter_dump != 0 and (k+1) == inter_dump:
-            name:str = DUMP_HISTORY_PATH + f'/{d}_{p}_{i}'
+            name:str = DUMP_HISTORY_PATH + f'/{d}_{p}_{i*ECYCLE*BASE_TIME*TIME_MULT/math.sqrt(p)}'
             dumpHistory(thread, INPUT_PATH, name)
             k = 0
         
@@ -145,58 +185,34 @@ def runThread(P:float, U:float, d:float, iter, thread, inter_dump):
     '''runs thread with PID controler''' 
     run(P, U, d, iter, thread, inter_dump)
     freeThreads.append(thread)
-
-def getTask(path:str):
-    '''reads csv task file and returns lists of P, U, D'''
-    
-    p = list()
-    u = list()
-    d = list()
-    
-    with open(path) as csvfile:
-        reader = csv.reader(csvfile, delimiter=',')
-        next(reader)  # Skip header line in csv
-        for row in reader:
-            d.append(float(row[0]))
-            p.append(float(row[1]))
-            u.append(float(row[2]))      
-    
-    d_list = set(d)
-    for i in d_list:
-        os.mkdir(f'{LOG_PATH}/{i}')
-    
-    return d, p, u
     
     
 if __name__ == '__main__':
-
-    tc = int(input('Number of threads '))
-    it = int(input('Number of iterations '))
-    threadList = list()
-
-    for i in range(tc):
-        shutil.copyfile(f'{INPUT_PATH}.inp', f'{INPUT_PATH}{i+1}.inp')    #copies input file for each thread
-
-    clearLog(LOG_PATH)    #clears log folder
-    clearLog(DUMP_HISTORY_PATH)    #clears history folder
-
-    d_task, p_task, u_task = getTask('task.csv')    #reads task file
+    # SETUP
+    tc = int(input('Number of threads '))   #number of threads
+    it = int(input('Number of iterations '))   #number of iterations
     freeThreads = [i+1 for i in range(tc)]    #list of free threads
     n = 1   #number of active threads
+    clearLog(LOG_PATH)    #clears log folder
+    clearLog(DUMP_HISTORY_PATH)    #clears history folder
+    modelInit('Input/test.inp') #reads model parameters
+    copyInputFiles(tc, INPUT_PATH) #copies input file for each thread    
+    d_task, p_task, u_task = getTask('task.csv')    #reads task file
+    
+    # MAIN LOOP
     tStart = time.time()    #time counter
-
     while True: #main loop
         if len(p_task)>0:
             if n < tc+1:
-                t = threading.Thread(target=runThread, args=(p_task[0], u_task[0], d_task[0], it, freeThreads[0], 1)) #creates new thread
+                t = threading.Thread(target=runThread, args=(p_task[0], u_task[0], d_task[0], it, freeThreads[0], DUMP_ITER)) #creates new thread
+                t.start()    #starts thread
                 p_task.pop(0)    #deletes first element from list
                 u_task.pop(0)    #deletes first element from list
                 d_task.pop(0)    #deletes first element from list
-                t.start()    #starts thread
                 freeThreads.pop(0)    #deletes first element from list
         n = threading.active_count()    #number of active threads
-        time.sleep(1)    #waits for 1 second
-        if n == 1:    #if there is only one active thread
+        time.sleep(1)    #waits for 1 second who knows why
+        if n == 1:    #if there is only main thread
             print('\033[1;32mDONE\033[0;0m')    #prints DONE
             break    #breaks the loop
 

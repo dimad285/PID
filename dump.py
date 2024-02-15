@@ -1,16 +1,14 @@
 import h5py
-import matplotlib.pyplot as plt
-import matplotlib.patches as patches
 import pygame
-
-
+import struct
+import os
+import matplotlib.pyplot as plt
+import numpy as np
 
 def read(path:str):
     N = 0
     f = h5py.File(path, 'r')
-
     #print(list(f.keys()))
-
     l = len(list(f['ions'])) # type: ignore
     for i in range(l):
         N = N + len(list(f['ions'][f'pGrp{i}']['ptcls'])) # type: ignore
@@ -19,11 +17,10 @@ def read(path:str):
 
 def draw(path:str, part = 'ions', fig = None, th = 1):
 
-
     done = False
     BLACK = (  0,   0,   0)
     WHITE = (255, 255, 255)
-    size = [1920, 1000]
+    size = [1280, 720]
     screen = pygame.display.set_mode(size)
 
     if fig != None:
@@ -40,14 +37,11 @@ def draw(path:str, part = 'ions', fig = None, th = 1):
             Y.append(j[1])
             XY.append((int(j[0]/0.128*size[0]), size[1] - int(j[1]/0.064*size[1])))
 
-    #print(XY)
-
-    while not done:
-        
+    while not done:     
         for event in pygame.event.get(): # User did something
             if event.type == pygame.QUIT: # If user clicked close
                 done=True # Flag that we are done so we exit this loop
-
+                
         screen.fill(BLACK)
         for i in XY:
             screen.set_at(i,WHITE)
@@ -56,12 +50,6 @@ def draw(path:str, part = 'ions', fig = None, th = 1):
         pygame.display.flip()
 
     pygame.quit()
-    #plt.scatter(X,Y,th)
-    #plt.plot([0, 0.128, 0.128, 0, 0], [0.028, 0.028, 0.033, 0.033, 0.028],'r')
-    #plt.plot([0.02, 0.02, 0.045, 0.045, 0.02], [0, 0.006, 0.006, 0, 0],'r')
-    #plt.plot([0.108, 0.108, 0.083, 0.083, 0.108], [0, 0.006, 0.006, 0, 0],'r')
-    #plt.show()
-
 
 def readFull(path:str):
     f = h5py.File(path, 'r')
@@ -73,7 +61,56 @@ def readFull(path:str):
     f.close()
 
 
-if __name__ == 'main':
-    pygame.init()
-    #readFull('dump/h5/1.h5')
-    draw('dump/h5/1.h5',part = 'ions')
+def readBin(path:str):
+    with open(path, 'rb') as f:
+        #simLen = int.from_bytes(f.read(4).encode(), "little")
+        #simTime = struct.unpack('f', f.read(4).encode())
+        f.read(8)
+        name = int.from_bytes(f.read(4), "little")
+        print(name)
+        print('name =', f.read(name+1).decode())
+        tmp = f.read(4)
+        #print(tmp)
+        simTime = struct.unpack('<f', tmp)
+        print(simTime)
+        dims = struct.unpack('<4f', f.read(16))
+        print(dims)
+        nbound = int.from_bytes(f.read(4), "little")
+        print(nbound)
+        print(f.read(30))
+        
+def readCharge(path:str, plotFlag, printFlag, bound:int = 3):
+    Q = []
+    file_list = os.listdir(path)
+    for i in file_list:
+        f = h5py.File(f'{path}/{i}', 'r')
+        Q.append(list(f['Boundaries'][f'boundary{bound}']['Q'])) # type: ignore
+        f.close()
+    
+    if plotFlag:
+        X = np.arange(0, len(Q[0]), 1, dtype=np.int32)
+        Y = np.arange(0, len(Q), 1, dtype=np.int32)
+        X, Y = np.meshgrid(X, Y)
+        Q = np.array(Q)
+        fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
+        surf = ax.plot_surface(X, Y, Q, cmap='viridis',
+                       linewidth=0, antialiased=False)
+        plt.show()
+    
+    if printFlag:
+        with open('charge.txt', 'w') as f:
+            x = 0
+            y = 0
+            f.write('x\tt\tQ\n')
+            f.write('m\ts\tk\n')
+            f.write('coord\ttime\tcharge\n')
+            for i in Q:
+                y = y + 1
+                x = 0
+                for j in i:
+                    f.write(f'{x}\t{y}\t{j}\n')
+                    x = x + 1
+    
+
+if __name__ == '__main__':
+    readCharge('history', True, False)
